@@ -1,27 +1,24 @@
-# for table 1
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_clip_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
+source .venv/bin/activate
 
-# for table 3
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_clip_imagenet_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_imagenet_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
+DATASETS=("NIPS17" "LLaVA-Instruct-150K" "Medical-Multimodal-Eval")
+ATTACK_METHOD=("M-Attack" "FOA-Attack" "SSA-CWA")
+LOG_DIR="/workspace/pip/logs"
+mkdir -p "${LOG_DIR}"
+LOG_FILE="${LOG_DIR}/test_svm_$(date +%Y%m%d_%H%M%S).txt"
 
-# for table 4
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/cw_0.01_0.005_50_llm_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/cw_0.01_0.005_50_llm_imagenet_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
+for train_data in "${DATASETS[@]}"; do
+    for test_data in "${DATASETS[@]}"; do
+        for attack_method in "${ATTACK_METHOD[@]}"; do
+            echo "Testing with train data: ${train_data}, test data: ${test_data}, attack method: ${attack_method}" | tee -a "${LOG_FILE}"
+            python /workspace/pip/test_svm.py \
+                --clean_attention_dir /workspace/pip/results/${test_data}/original/test \
+                --attacked_attention_dir /workspace/pip/results/${test_data}/attacked/${attack_method}/test \
+                --calib_clean_attention_dir /workspace/pip/results/${train_data}/original/dev \
+                --svm_dir /workspace/pip/svm/${train_data}/${attack_method} \
+                --svm_total_num 1 | tee -a "${LOG_FILE}"
+            echo "----" | tee -a "${LOG_FILE}"
+        done
+    done
+done
 
-# for Table 5
-python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_2_20_llm_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
-python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_4_20_llm_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
-python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_16_20_llm_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm
-
-# for Table 6
-# for lvlm in "blip2_flan-t5-xl" "blip2_flan-t5-xxl" "blip2_opt-2.7b" "blip2_opt-6.7b" "iblip_flan-t5-xl" "iblip_flan-t5-xxl" "iblip_vicuna-7b" "iblip_vicuna-13b"; do
-#     python test_svm.py --work_dir output_dir/${lvlm}/pgd_2_8_20_llm_vqav2_1000 --svm_dir output_dir/${lvlm}/pgd_2_8_20_llm_vqav2_ref_5000/svm
-# done
-
-# for Table 7
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_clip_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm --svm_alarm_num 2 --svm_total_num 3
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm --svm_alarm_num 2 --svm_total_num 3
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_clip_imagenet_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm --svm_alarm_num 3 --svm_total_num 3
-# python test_svm.py --work_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_imagenet_1000 --svm_dir output_dir/iblip_vicuna-7b/pgd_2_8_20_llm_vqav2_ref_5000/svm --svm_alarm_num 2 --svm_total_num 3
+echo "Saved test output to ${LOG_FILE}"

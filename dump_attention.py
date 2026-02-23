@@ -11,6 +11,10 @@ from torch.utils.data import DataLoader
 import torch.backends.cudnn as cudnn
 from datasets import vqa_imagefolder_dump_attention
 from models import InstructBlip_PIP, Blip2_PIP
+try:
+    from models import Qwen25VL_PIP
+except ImportError:
+    Qwen25VL_PIP = None
 import utils
 import shutil
 
@@ -28,7 +32,12 @@ def main(args):
     #### Dataset #### 
     print("Creating vqa datasets")
 
-    datasets = vqa_imagefolder_dump_attention(args.image_dir)
+    datasets = vqa_imagefolder_dump_attention(
+        image_dir=args.image_dir,
+        clean_image_dir=args.clean_image_dir,
+        attacked_image_dir=args.attacked_image_dir,
+        images_root=args.images_root,
+    )
 
     if args.distributed:
         num_tasks = utils.get_world_size()
@@ -41,11 +50,20 @@ def main(args):
 
     print("Creating model")
 
-    if args.lvlm=="iblip":
+    if args.lvlm == "iblip":
+        if not args.lvlm_root:
+            raise ValueError("--lvlm_root is required for iblip models")
         model = InstructBlip_PIP(args.lvlm_root, args.lvlm_llm)
-    elif args.lvlm=="blip2":
+    elif args.lvlm == "blip2":
+        if not args.lvlm_root:
+            raise ValueError("--lvlm_root is required for blip2 models")
         model = Blip2_PIP(args.lvlm_root, args.lvlm_llm)
-
+    elif args.lvlm == "qwen25vl":
+        if Qwen25VL_PIP is None:
+            raise ImportError("Qwen2.5-VL support requires transformers. Install with: pip install transformers")
+        model = Qwen25VL_PIP(model_name=args.lvlm_model_id, attn_layer_idx=args.attn_layer_idx)
+    else:
+        raise ValueError(f"Unknown lvlm: {args.lvlm}")
 
     model = model.to(device)   
 
@@ -73,7 +91,11 @@ def main(args):
         for i, question in enumerate(question_list):
             attention_map[i] = model.get_attention(image, question)
 
-        np.save(os.path.join(args.output_attention_dir, "{}.npy".format(image_name[0].split(".")[0])), attention_map.numpy())
+        rel_image_path = image_name[0]
+        rel_no_ext = os.path.splitext(rel_image_path)[0]
+        out_path = os.path.join(args.output_attention_dir, f"{rel_no_ext}.npy")
+        Path(os.path.dirname(out_path)).mkdir(parents=True, exist_ok=True)
+        np.save(out_path, attention_map.numpy())
 
     total_time = time.time() - start_time
     total_time_str = str(datetime.timedelta(seconds=int(total_time)))
@@ -93,24 +115,43 @@ if __name__ == '__main__':
     parser.add_argument('--distributed', default=True, type=bool)
     
     # model config
-    parser.add_argument('--lvlm_root', required=True, type=str)
-    parser.add_argument('--lvlm', required=True, type=str, choices=["blip2_flan-t5-xl", "blip2_flan-t5-xxl", "blip2_opt-2.7b", "blip2_opt-6.7b", "iblip_flan-t5-xl", "iblip_flan-t5-xxl", "iblip_vicuna-7b", "iblip_vicuna-13b"])
+    parser.add_argument('--lvlm_root', default=None, type=str, help='Local model root (required for blip2/iblip, optional for qwen25vl)')
+    parser.add_argument('--lvlm', required=True, type=str, choices=["blip2_flan-t5-xl", "blip2_flan-t5-xxl", "blip2_opt-2.7b", "blip2_opt-6.7b", "iblip_flan-t5-xl", "iblip_flan-t5-xxl", "iblip_vicuna-7b", "iblip_vicuna-13b", "qwen25vl"])
+    parser.add_argument('--lvlm_model_id', default="Qwen/Qwen2.5-VL-3B-Instruct", type=str, help='HuggingFace model id for qwen25vl (e.g. Qwen/Qwen2.5-VL-3B-Instruct)')
+    parser.add_argument('--attn_layer_idx', default=-1, type=int, help='For qwen25vl: decoder layer index for first-token attention (default -1 = last layer)')
  
     # dataset config
-    parser.add_argument('--image_dir', required=True, type=str)
+    parser.add_argument('--image_dir', default=None, type=str, help='Legacy image root containing an image/ subfolder')
+    parser.add_argument('--clean_image_dir', default=None, type=str, help='Directory containing clean images')
+    parser.add_argument('--attacked_image_dir', default=None, type=str, help='Directory containing attacked images')
+    parser.add_argument('--images_root', default=None, type=str, help='Recursively dump all images under this root, preserving relative folder structure')
     parser.add_argument('--question_list', required=True, type=str)
+    parser.add_argument('--output_attention_dir', default=None, type=str, help='Output directory for dumped attention maps')
     
     args = parser.parse_args()
 
-    args.lvlm, args.lvlm_llm = args.lvlm.split("_")
-
-    args.output_attention_dir = os.path.join(args.image_dir, "attention_map_index0")
-    Path(args.output_attention_dir).mkdir(parents=True, exist_ok=True)
-    if os.listdir(args.output_attention_dir):
-        print(f"Already exists attention map in {args.image_dir}")
+    if args.lvlm == "qwen25vl":
+        args.lvlm_llm = getattr(args, "lvlm_model_id", "Qwen/Qwen2.5-VL-3B-Instruct")
     else:
+        args.lvlm, args.lvlm_llm = args.lvlm.split("_", 1)
+
+    if args.image_dir is None and args.clean_image_dir is None and args.attacked_image_dir is None and args.images_root is None:
+        raise ValueError("Provide --images_root, --image_dir, or at least one of --clean_image_dir / --attacked_image_dir")
+
+    if args.output_attention_dir is None:
+        if args.image_dir is not None:
+            args.output_attention_dir = os.path.join(args.image_dir, "attention_map_index0")
+        else:
+            raise ValueError("--output_attention_dir is required when --image_dir is not provided")
+
+    Path(args.output_attention_dir).mkdir(parents=True, exist_ok=True)
+    if args.images_root is not None:
+        main(args)
+    elif args.image_dir is not None:
         if os.path.exists(os.path.join(args.image_dir, "vqa_result.json")):
             shutil.copy(args.question_list, os.path.join(args.image_dir, "question_list.json"))
             main(args)
         else:
             print(f"Not finish running in {args.image_dir}")
+    else:
+        main(args)
