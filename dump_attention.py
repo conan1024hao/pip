@@ -61,7 +61,7 @@ def main(args):
     elif args.lvlm == "qwen25vl":
         if Qwen25VL_PIP is None:
             raise ImportError("Qwen2.5-VL support requires transformers. Install with: pip install transformers")
-        model = Qwen25VL_PIP(model_name=args.lvlm_model_id, attn_layer_idx=args.attn_layer_idx)
+        model = Qwen25VL_PIP(model_name=args.lvlm_model_id)
     else:
         raise ValueError(f"Unknown lvlm: {args.lvlm}")
 
@@ -118,7 +118,6 @@ if __name__ == '__main__':
     parser.add_argument('--lvlm_root', default=None, type=str, help='Local model root (required for blip2/iblip, optional for qwen25vl)')
     parser.add_argument('--lvlm', required=True, type=str, choices=["blip2_flan-t5-xl", "blip2_flan-t5-xxl", "blip2_opt-2.7b", "blip2_opt-6.7b", "iblip_flan-t5-xl", "iblip_flan-t5-xxl", "iblip_vicuna-7b", "iblip_vicuna-13b", "qwen25vl"])
     parser.add_argument('--lvlm_model_id', default="Qwen/Qwen2.5-VL-3B-Instruct", type=str, help='HuggingFace model id for qwen25vl (e.g. Qwen/Qwen2.5-VL-3B-Instruct)')
-    parser.add_argument('--attn_layer_idx', default=-1, type=int, help='For qwen25vl: decoder layer index for first-token attention (default -1 = last layer)')
  
     # dataset config
     parser.add_argument('--image_dir', default=None, type=str, help='Legacy image root containing an image/ subfolder')

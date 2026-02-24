@@ -18,7 +18,7 @@ except ImportError:
 class Qwen25VL_PIP(nn.Module):
     """Qwen2.5-VL wrapper that provides LLM first-token attention to image tokens."""
 
-    def __init__(self, huggingface_root=None, model_name="Qwen/Qwen2.5-VL-3B-Instruct", attack_position=None, attn_layer_idx=-1):
+    def __init__(self, huggingface_root=None, model_name="Qwen/Qwen2.5-VL-3B-Instruct", attack_position=None):
         super(Qwen25VL_PIP, self).__init__()
         if Qwen2_5_VLForConditionalGeneration is None or AutoProcessor is None:
             raise ImportError("transformers is required for Qwen2.5-VL. Install with: pip install transformers")
@@ -46,7 +46,6 @@ class Qwen25VL_PIP(nn.Module):
 
         self.model_name = model_name
         self.attack_position = attack_position
-        self.attn_layer_idx = int(attn_layer_idx)
 
     def _prepare_model_inputs(self, x, question):
         """Convert tensor image + question to full model inputs."""
@@ -98,7 +97,7 @@ class Qwen25VL_PIP(nn.Module):
     def get_attention(self, x, question):
         """
         Return attention from first generated LLM token to image tokens.
-        Shape: (1, num_heads, 32), selecting one configurable decoder layer.
+        Shape: (num_layers, num_heads, 32), covering all decoder layers.
         """
         inputs = self._prepare_model_inputs(x, question)
         if "input_ids" not in inputs:
@@ -146,14 +145,7 @@ class Qwen25VL_PIP(nn.Module):
         if len(layer_attn_list) == 0:
             raise RuntimeError("No valid layer attentions found for first generated token")
 
-        layer_stack = torch.stack(layer_attn_list, dim=0)  # (num_layers, num_heads, 32)
-        num_layers = layer_stack.size(0)
-        layer_idx = self.attn_layer_idx
-        if layer_idx < 0:
-            layer_idx = num_layers + layer_idx
-        if layer_idx < 0 or layer_idx >= num_layers:
-            raise ValueError(f"attn_layer_idx out of range: {self.attn_layer_idx} for num_layers={num_layers}")
-        return layer_stack[layer_idx:layer_idx+1].float().cpu()
+        return torch.stack(layer_attn_list, dim=0).float().cpu()
 
     def predict(self, x, question):
         inputs = self._prepare_model_inputs(x, question)
